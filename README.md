@@ -1,5 +1,5 @@
 # StockExchange
-A mock stock exchange build in **Django** and deployed in **Kubernetes**.
+A mock stock exchange build in **Go** and deployed in **Kubernetes**.
 
 Runs trading bots that randomly place BUY or SELL orders with the exchange Django API. These orders are filled using different matching algorithms (FIFO, Pro-Rata). The order matching algorithm can be specified by the `xchg` cli.
 
