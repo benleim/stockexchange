@@ -5,14 +5,10 @@ Runs trading bots that randomly place BUY or SELL orders with the exchange Djang
 
 The trading bots will randomly place BUY or SELL orders with a normal distribution of prices centered at the current lowest bid price and highest ask price at the time.
 
-<hr/>
-
 ## Completed Features
 
-<hr/>
-
 ## Features in Development
-* Django API Order Matching (*The Stock Exchange*)
+* API (*The Stock Exchange*)
     * FIFO, Pro-Rata Algos
     * Short selling
     * Options
