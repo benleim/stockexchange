@@ -32,7 +32,7 @@ func getPrice(c echo.Context) error {
 
 // POST - Order
 func order(c echo.Context) (err error) {
-	u := new(User)
+	u := new(Order)
 	if err = c.Bind(u); err != nil {
 	  return
 	}
