@@ -1,15 +1,12 @@
 version: "3.7"
 services:
   exchange:
-    build: ./
+    build: ./dockerfiles/go
     ports:
       - "1323:1323"
   
   mongodb:
-    image: mongo:latest
+    build: ./dockerfiles/mongodb
     restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
     ports:
       - "27017-27019:27017-27019"
