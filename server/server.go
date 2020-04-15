@@ -36,13 +36,7 @@ func main() {
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
-// ----- Endpoints -----
-
-// GET - Get Stock Price
-func getPrice(c echo.Context) error {
-	// User ID from path `users/:id`
-	ticker := c.Param("ticker")
-
+func getMongoClient() *mongo.Client {
 	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017").
 		SetAuth(options.Credential{
 			AuthSource: "admin",
@@ -63,10 +57,22 @@ func getPrice(c echo.Context) error {
 		log.Fatal(err)
 	}
 
+	return client
+}
+
+// ----- Endpoints -----
+
+// GET - Get Stock Price
+func getPrice(c echo.Context) error {
+	// User ID from path `users/:id`
+	ticker := c.Param("ticker")
+
+	client := getMongoClient()
+
 	// Reference "stocks" collection
 	collection := client.Database("exchange").Collection("stocks")
 	var result Stock
-	err = collection.FindOne(context.TODO(), bson.D{{"ticker", ticker}}).Decode(&result)
+	err := collection.FindOne(context.TODO(), bson.D{{"ticker", ticker}}).Decode(&result)
 	if err != nil {
 		log.Fatal(err)
 	}
