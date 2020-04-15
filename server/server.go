@@ -2,28 +2,31 @@ package main
 
 import (
 	"context"
-    "fmt"
-    "log"
+	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo"
 
-	// "go.mongodb.org/mongo-driver/bson"
-    "go.mongodb.org/mongo-driver/mongo"
-    "go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // ----- Structs -----
 type Order struct {
-	Type   	string `json:"type"`
-	Shares 	string `json:"int"`
+	Type   string `json:"type"`
+	Shares string `json:"int"`
+}
+
+type Stock struct {
+	Name   string  `json:"name"`
+	Ticker string  `json:"ticker"`
+	IPO    float64 `json:"ipo"`
 }
 
 func main() {
 	e := echo.New()
-
-	// Mongo setup
-	setupMongo()
 
 	// List endpoints
 	e.GET("/stock/:ticker", getPrice)
@@ -33,9 +36,20 @@ func main() {
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
-func setupMongo() {
-	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017")
-	
+// ----- Endpoints -----
+
+// GET - Get Stock Price
+func getPrice(c echo.Context) error {
+	// User ID from path `users/:id`
+	ticker := c.Param("ticker")
+
+	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017").
+		SetAuth(options.Credential{
+			AuthSource: "admin",
+			Username:   "admin-user",
+			Password:   "admin-password",
+		})
+
 	// Connect to MongoDB
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 
@@ -48,24 +62,24 @@ func setupMongo() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Connected to MongoDB!")
-}
 
+	// Reference "stocks" collection
+	collection := client.Database("exchange").Collection("stocks")
+	var result Stock
+	err = collection.FindOne(context.TODO(), bson.D{{"ticker", ticker}}).Decode(&result)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// ----- Endpoints -----
-
-// GET - Get Stock Price
-func getPrice(c echo.Context) error {
-	// User ID from path `users/:id`
-	id := c.Param("ticker")
-  	return c.String(http.StatusOK, id)
+	ipo := strconv.FormatFloat(result.IPO, 'f', 2, 64)
+	return c.String(http.StatusOK, ipo)
 }
 
 // POST - Order
 func order(c echo.Context) (err error) {
 	u := new(Order)
 	if err = c.Bind(u); err != nil {
-	  return
+		return
 	}
 	return c.JSON(http.StatusOK, u)
 }

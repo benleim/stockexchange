@@ -1,12 +1,12 @@
 version: "3.7"
 services:
   exchange:
-    build: ./dockerfiles/go
+    build: ./server
     ports:
       - "1323:1323"
   
   mongodb:
-    build: ./dockerfiles/mongodb
+    build: ./mongodb
     restart: always
     ports:
       - "27017-27019:27017-27019"
