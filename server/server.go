@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/labstack/echo"
 
@@ -14,9 +15,14 @@ import (
 )
 
 // ----- Structs -----
+
 type Order struct {
-	Type   string `json:"type"`
-	Shares string `json:"int"`
+	Id    int       `json:"id"`
+	Side  string    `json:"side"`
+	Time  time.Time `json:"time"`
+	Qty   int       `json:"qty"`
+	Price float64   `json:"price"`
+	Open  bool      `json:"open"`
 }
 
 type Stock struct {
@@ -46,7 +52,6 @@ func getMongoClient() *mongo.Client {
 
 	// Connect to MongoDB
 	client, err := mongo.Connect(context.TODO(), clientOptions)
-
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,6 +63,25 @@ func getMongoClient() *mongo.Client {
 	}
 
 	return client
+}
+
+func getSellOrders(cli *mongo.Client, maxPrice float64) *mongo.Cursor {
+	collection := cli.Database("exchange").Collection("orders")
+	findOptions := options.Find()
+	findOptions.SetSort(bson.D{{"price", -1}})
+	query := bson.D{
+		{"price", bson.D{
+			{"$lte", maxPrice},
+		}},
+	}
+	cur, err := collection.Find(context.TODO(), query, findOptions)
+	println("Fetched SELL data from mongo")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// defer cur.Close(nil)
+	return cur
 }
 
 // ----- Endpoints -----
@@ -83,9 +107,27 @@ func getPrice(c echo.Context) error {
 
 // POST - Order
 func order(c echo.Context) (err error) {
+	// Decode order req body
 	u := new(Order)
 	if err = c.Bind(u); err != nil {
 		return
 	}
+	u.Time = time.Now()
+
+	client := getMongoClient()
+	cur := getSellOrders(client, u.Price)
+	for cur.Next(nil) {
+		var result Order
+		err := cur.Decode(&result)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		println(strconv.FormatFloat(result.Price, 'f', 2, 64))
+	}
+	if err := cur.Err(); err != nil {
+		log.Fatal(err)
+	}
+
 	return c.JSON(http.StatusOK, u)
 }
