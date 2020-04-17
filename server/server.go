@@ -17,13 +17,14 @@ import (
 // ----- Structs -----
 
 type Order struct {
-	Id     int       `json:"id"`
-	Side   string    `json:"side"`
-	Time   time.Time `json:"time"`
-	Qty    int       `json:"qty"`
-	Price  float64   `json:"price"`
-	Open   bool      `json:"open"`
-	Ticker string    `json:"ticker"`
+	Id        int       `json:"id"`
+	Side      string    `json:"side"`
+	Time      time.Time `json:"time"`
+	Qty       int       `json:"qty"`
+	Price     float64   `json:"price"`
+	Open      bool      `json:"open"`
+	Ticker    string    `json:"ticker"`
+	Remaining int       `json:"remaining"`
 }
 
 type Stock struct {
@@ -88,6 +89,22 @@ func getSellOrders(cli *mongo.Client, ticker string, maxPrice float64) *mongo.Cu
 	return cur
 }
 
+func updateSellOrder(cli *mongo.Client, o Order, amount int) {
+	col := cli.Database("exchange").Collection("orders")
+	filter := bson.M{"id": o.Id}
+	open := !(o.Remaining == amount)
+	remaining := o.Remaining - amount
+	update := bson.M{"$set": bson.M{
+		"open":      open,
+		"remaining": remaining,
+	}}
+	col.UpdateOne(
+		context.Background(),
+		filter,
+		update,
+	)
+}
+
 // ----- Endpoints -----
 
 // GET - Get Stock Price
@@ -130,24 +147,19 @@ func order(c echo.Context) (err error) {
 			log.Fatal(err)
 		}
 
-		println(strconv.FormatFloat(result.Price, 'f', 2, 64))
-		sum += result.Qty
-		if sum < u.Qty {
-			// Update sell order
-			col := client.Database("exchange").Collection("orders")
-			filter := bson.M{"id": result.Id}
-			update := bson.M{"$set": bson.M{"open": false, "remaining": 0}}
-			col.UpdateOne(
-				context.Background(),
-				filter,
-				update,
-			)
-		} else if sum >= u.Qty {
+		println(strconv.FormatFloat(result.Price, 'f', 2, 64), result.Qty)
+		sum += result.Remaining
+		if sum <= u.Qty {
+			updateSellOrder(client, result, result.Remaining)
+		} else {
+			remaining := result.Remaining - (sum - u.Qty)
+			println("remaining", remaining)
+			updateSellOrder(client, result, remaining)
+		}
+
+		if sum >= u.Qty {
 			break
 		}
-	}
-	if err := cur.Err(); err != nil {
-		log.Fatal(err)
 	}
 
 	return c.JSON(http.StatusOK, u)
