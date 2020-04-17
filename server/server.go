@@ -17,12 +17,13 @@ import (
 // ----- Structs -----
 
 type Order struct {
-	Id    int       `json:"id"`
-	Side  string    `json:"side"`
-	Time  time.Time `json:"time"`
-	Qty   int       `json:"qty"`
-	Price float64   `json:"price"`
-	Open  bool      `json:"open"`
+	Id     int       `json:"id"`
+	Side   string    `json:"side"`
+	Time   time.Time `json:"time"`
+	Qty    int       `json:"qty"`
+	Price  float64   `json:"price"`
+	Open   bool      `json:"open"`
+	Ticker string    `json:"ticker"`
 }
 
 type Stock struct {
@@ -42,6 +43,7 @@ func main() {
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
+// ----- Utils -----
 func getMongoClient() *mongo.Client {
 	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017").
 		SetAuth(options.Credential{
@@ -65,11 +67,13 @@ func getMongoClient() *mongo.Client {
 	return client
 }
 
-func getSellOrders(cli *mongo.Client, maxPrice float64) *mongo.Cursor {
+func getSellOrders(cli *mongo.Client, ticker string, maxPrice float64) *mongo.Cursor {
 	collection := cli.Database("exchange").Collection("orders")
 	findOptions := options.Find()
 	findOptions.SetSort(bson.D{{"price", -1}})
 	query := bson.D{
+		{"open", true},
+		{"ticker", ticker},
 		{"price", bson.D{
 			{"$lte", maxPrice},
 		}},
@@ -114,8 +118,11 @@ func order(c echo.Context) (err error) {
 	}
 	u.Time = time.Now()
 
+	// Get mongo client
 	client := getMongoClient()
-	cur := getSellOrders(client, u.Price)
+	// Get sell orders cursor
+	cur := getSellOrders(client, u.Ticker, u.Price)
+	sum := 0
 	for cur.Next(nil) {
 		var result Order
 		err := cur.Decode(&result)
@@ -124,6 +131,20 @@ func order(c echo.Context) (err error) {
 		}
 
 		println(strconv.FormatFloat(result.Price, 'f', 2, 64))
+		sum += result.Qty
+		if sum < u.Qty {
+			// Update sell order
+			col := client.Database("exchange").Collection("orders")
+			filter := bson.M{"id": result.Id}
+			update := bson.M{"$set": bson.M{"open": false, "remaining": 0}}
+			col.UpdateOne(
+				context.Background(),
+				filter,
+				update,
+			)
+		} else if sum >= u.Qty {
+			break
+		}
 	}
 	if err := cur.Err(); err != nil {
 		log.Fatal(err)
