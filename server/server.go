@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -17,14 +18,17 @@ import (
 // ----- Structs -----
 
 type Order struct {
-	Id        int       `json:"id"`
-	Side      string    `json:"side"`
-	Time      time.Time `json:"time"`
-	Qty       int       `json:"qty"`
-	Price     float64   `json:"price"`
-	Open      bool      `json:"open"`
-	Ticker    string    `json:"ticker"`
-	Remaining int       `json:"remaining"`
+	Id        primitive.ObjectID `json:"_id" bson:"_id"`
+	Side      string             `json:"side"`
+	Time      time.Time          `json:"time"`
+	Qty       int                `json:"qty"`
+	Price     float64            `json:"price"`
+	Open      bool               `json:"open"`
+	Ticker    string             `json:"ticker"`
+	Remaining int                `json:"remaining"`
+}
+
+type OrderW struct {
 }
 
 type Stock struct {
@@ -71,7 +75,7 @@ func getMongoClient() *mongo.Client {
 func getSellOrders(cli *mongo.Client, ticker string, maxPrice float64) *mongo.Cursor {
 	collection := cli.Database("exchange").Collection("orders")
 	findOptions := options.Find()
-	findOptions.SetSort(bson.D{{"price", -1}})
+	findOptions.SetSort(bson.D{{"price", 1}})
 	query := bson.D{
 		{"open", true},
 		{"ticker", ticker},
@@ -91,7 +95,7 @@ func getSellOrders(cli *mongo.Client, ticker string, maxPrice float64) *mongo.Cu
 
 func updateSellOrder(cli *mongo.Client, o Order, amount int) {
 	col := cli.Database("exchange").Collection("orders")
-	filter := bson.M{"id": o.Id}
+	filter := bson.M{"_id": o.Id}
 	open := !(o.Remaining == amount)
 	remaining := o.Remaining - amount
 	update := bson.M{"$set": bson.M{
@@ -105,11 +109,29 @@ func updateSellOrder(cli *mongo.Client, o Order, amount int) {
 	)
 }
 
+func writeOpenOrder(cli *mongo.Client, u *Order) {
+	orderDoc := bson.M{
+		"side":      u.Side,
+		"time":      time.Now(),
+		"qty":       u.Qty,
+		"price":     u.Price,
+		"open":      true,
+		"ticker":    u.Ticker,
+		"remaining": u.Remaining,
+	}
+	col := cli.Database("exchange").Collection("orders")
+	result, insertErr := col.InsertOne(context.TODO(), orderDoc)
+	if insertErr != nil {
+		println("Order Insert ERROR:", insertErr)
+	} else {
+		println("Order Insert Result:", result)
+	}
+}
+
 // ----- Endpoints -----
 
 // GET - Get Stock Price
 func getPrice(c echo.Context) error {
-	// User ID from path `users/:id`
 	ticker := c.Param("ticker")
 
 	client := getMongoClient()
@@ -147,7 +169,7 @@ func order(c echo.Context) (err error) {
 			log.Fatal(err)
 		}
 
-		println(strconv.FormatFloat(result.Price, 'f', 2, 64), result.Qty)
+		println(strconv.FormatFloat(result.Price, 'f', 2, 64), result.Qty, primitive.ObjectID.Hex(result.Id))
 		sum += result.Remaining
 		if sum <= u.Qty {
 			updateSellOrder(client, result, result.Remaining)
@@ -162,5 +184,10 @@ func order(c echo.Context) (err error) {
 		}
 	}
 
+	// Write order to db if it can't be filled
+	if sum < u.Qty {
+		u.Remaining = (u.Qty - sum)
+		writeOpenOrder(client, u)
+	}
 	return c.JSON(http.StatusOK, u)
 }
