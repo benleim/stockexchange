@@ -72,28 +72,36 @@ func getMongoClient() *mongo.Client {
 	return client
 }
 
-func getSellOrders(cli *mongo.Client, ticker string, maxPrice float64) *mongo.Cursor {
+func getOrders(cli *mongo.Client, ticker string, maxPrice float64, side string) *mongo.Cursor {
+	// Side vars for ordering
+	priceSort := 1
+	maxQuery := "$lte"
+	if side == "SELL" {
+		priceSort = -1
+		maxQuery = "$gte"
+	}
+
 	collection := cli.Database("exchange").Collection("orders")
 	findOptions := options.Find()
-	findOptions.SetSort(bson.D{{"price", 1}})
+	findOptions.SetSort(bson.D{{"price", priceSort}})
 	query := bson.D{
+		{"side", side},
 		{"open", true},
 		{"ticker", ticker},
 		{"price", bson.D{
-			{"$lte", maxPrice},
+			{maxQuery, maxPrice},
 		}},
 	}
 	cur, err := collection.Find(context.TODO(), query, findOptions)
-	println("Fetched SELL data from mongo")
+	println("Fetched order data from mongo")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// defer cur.Close(nil)
 	return cur
 }
 
-func updateSellOrder(cli *mongo.Client, o Order, amount int) {
+func updateOrder(cli *mongo.Client, o Order, amount int) {
 	col := cli.Database("exchange").Collection("orders")
 	filter := bson.M{"_id": o.Id}
 	open := !(o.Remaining == amount)
@@ -159,8 +167,12 @@ func order(c echo.Context) (err error) {
 
 	// Get mongo client
 	client := getMongoClient()
-	// Get sell orders cursor
-	cur := getSellOrders(client, u.Ticker, u.Price)
+	// Get opposite orders
+	side := "SELL"
+	if u.Side == "SELL" {
+		side = "BUY"
+	}
+	cur := getOrders(client, u.Ticker, u.Price, side)
 	sum := 0
 	for cur.Next(nil) {
 		var result Order
@@ -172,11 +184,11 @@ func order(c echo.Context) (err error) {
 		println(strconv.FormatFloat(result.Price, 'f', 2, 64), result.Qty, primitive.ObjectID.Hex(result.Id))
 		sum += result.Remaining
 		if sum <= u.Qty {
-			updateSellOrder(client, result, result.Remaining)
+			updateOrder(client, result, result.Remaining)
 		} else {
 			remaining := result.Remaining - (sum - u.Qty)
 			println("remaining", remaining)
-			updateSellOrder(client, result, remaining)
+			updateOrder(client, result, remaining)
 		}
 
 		if sum >= u.Qty {
