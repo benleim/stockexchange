@@ -110,6 +110,41 @@ func getOrders(cli *mongo.Client, ticker string, maxPrice float64, side string) 
 	return cur
 }
 
+func getIpoPrice(cli *mongo.Client, ticker string) float64 {
+	// No transactions exist, get IPO price
+	var stock Stock
+	col := cli.Database("exchange").Collection("stocks")
+	query := bson.D{{"ticker", ticker}}
+	err := col.FindOne(context.TODO(), query).Decode(&stock)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return stock.IPO
+}
+
+func getLastPrice(cli *mongo.Client, ticker string) float64 {
+	// Attempt to retrieve last transaction
+	var result Transaction
+	collection := cli.Database("exchange").Collection("transactions")
+	options := options.FindOne()
+	options.SetSort(bson.D{{"time", -1}})
+	query := bson.D{{"ticker", ticker}}
+
+	err := collection.FindOne(context.TODO(), query, options).Decode(&result)
+	if err != nil {
+		// No transactions - return IPO price
+		if err == mongo.ErrNoDocuments {
+			price := getIpoPrice(cli, ticker)
+			return price
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	return result.Price
+}
+
 func updateOrder(cli *mongo.Client, o Order, amount int) {
 	col := cli.Database("exchange").Collection("orders")
 	filter := bson.M{"_id": o.Id}
@@ -207,21 +242,14 @@ func getPrice(c echo.Context) error {
 	ticker := c.Param("ticker")
 
 	client := getMongoClient()
+	price := getLastPrice(client, ticker)
 
-	// Reference "transactions" collection
-	var result Transaction
-	collection := client.Database("exchange").Collection("transactions")
-	options := options.FindOne()
-	options.SetSort(bson.D{{"time", -1}})
-	query := bson.D{{"ticker", ticker}}
-
-	err := collection.FindOne(context.TODO(), query, options).Decode(&result)
-	if err != nil {
-		log.Fatal(err)
+	// price := strconv.FormatFloat(result.Price, 'f', 2, 64)
+	response := bson.M{
+		"price": price,
 	}
-
-	price := strconv.FormatFloat(result.Price, 'f', 2, 64)
-	return c.String(http.StatusOK, price)
+	println(response)
+	return c.JSON(http.StatusOK, response)
 }
 
 // POST - Order
