@@ -28,7 +28,13 @@ type Order struct {
 	Remaining int                `json:"remaining"`
 }
 
-type OrderW struct {
+type Transaction struct {
+	To     string
+	From   string
+	Qty    int
+	Price  float64
+	Ticker string
+	Time   time.Time
 }
 
 type Stock struct {
@@ -83,7 +89,10 @@ func getOrders(cli *mongo.Client, ticker string, maxPrice float64, side string) 
 
 	collection := cli.Database("exchange").Collection("orders")
 	findOptions := options.Find()
-	findOptions.SetSort(bson.D{{"price", priceSort}})
+	findOptions.SetSort(bson.D{
+		{"price", priceSort},
+		{"time", -1},
+	})
 	query := bson.D{
 		{"side", side},
 		{"open", true},
@@ -122,7 +131,8 @@ func updateOrder(cli *mongo.Client, o Order, amount int) {
 	println("Update Result: ", result)
 }
 
-func writeOrder(cli *mongo.Client, u *Order) {
+// Returns documentID string
+func writeOrder(cli *mongo.Client, u *Order) string {
 	orderDoc := bson.M{
 		"side":      u.Side,
 		"time":      time.Now(),
@@ -139,15 +149,60 @@ func writeOrder(cli *mongo.Client, u *Order) {
 	} else {
 		println("Order Insert Result:", result)
 	}
+
+	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+		return oid.Hex()
+	} else {
+		return "error"
+	}
 }
 
-func writeTransaction(cli *mongo.Client) {
+func writeTransaction(cli *mongo.Client, trans *Transaction, otherID string) {
+	col := cli.Database("exchange").Collection("transactions")
+	// Add missing fields to transaction
+	trans.Time = time.Now()
+	if trans.From == "" {
+		trans.From = otherID
+	} else {
+		trans.To = otherID
+	}
 
+	// Change to bsonM
+	transDoc := bson.M{
+		"to":     trans.To,
+		"from":   trans.From,
+		"qty":    trans.Qty,
+		"price":  trans.Price,
+		"ticker": trans.Ticker,
+		"time":   trans.Time,
+	}
+
+	result, insertErr := col.InsertOne(context.TODO(), transDoc)
+	if insertErr != nil {
+		println("Transaction Insert ERROR:", insertErr)
+	} else {
+		println("Transaction Insert Result:", result)
+	}
+}
+
+func orderToTrans(order *Order, qty int) Transaction {
+	trans := Transaction{
+		Qty:    qty,
+		Price:  order.Price,
+		Ticker: order.Ticker,
+	}
+	if order.Side == "BUY" {
+		trans.To = order.Id.Hex()
+	} else {
+		trans.From = order.Id.Hex()
+	}
+
+	return trans
 }
 
 // ----- Endpoints -----
 
-// GET - Get Stock Price
+// GET - Get Stock IPO Price
 func getPrice(c echo.Context) error {
 	ticker := c.Param("ticker")
 
@@ -181,9 +236,12 @@ func order(c echo.Context) (err error) {
 	if u.Side == "SELL" {
 		side = "BUY"
 	}
-	cur := getOrders(client, u.Ticker, u.Price, side)
+
 	sum := 0
+	queue := make([]Transaction, 0)
+	cur := getOrders(client, u.Ticker, u.Price, side)
 	for cur.Next(nil) {
+		// Decode order
 		var result Order
 		err := cur.Decode(&result)
 		if err != nil {
@@ -192,26 +250,39 @@ func order(c echo.Context) (err error) {
 
 		println(strconv.FormatFloat(result.Price, 'f', 2, 64), result.Qty, primitive.ObjectID.Hex(result.Id))
 		sum += result.Remaining
+		var amount int
 		if sum <= u.Qty {
-			updateOrder(client, result, result.Remaining)
+			amount = result.Remaining
 		} else {
-			remaining := result.Remaining - (sum - u.Qty)
-			println("remaining", remaining)
-			updateOrder(client, result, remaining)
+			amount = result.Remaining - (sum - u.Qty)
+			println("remaining", amount)
 		}
+		updateOrder(client, result, amount)
+		trans := orderToTrans(&result, amount)
+		queue = append(queue, trans)
 
+		// Stop when order is filled
 		if sum >= u.Qty {
 			break
 		}
 	}
 
-	// Write order to DB
+	// Determine amt remaining
 	if sum < u.Qty {
 		u.Remaining = (u.Qty - sum)
 	} else {
 		u.Remaining = 0
 	}
-	writeOrder(client, u)
+
+	// Write new order to db
+	newDocID := writeOrder(client, u)
+	println("New DocumentID", newDocID)
+
+	// Log transactions
+	for len(queue) > 0 {
+		writeTransaction(client, &queue[0], newDocID)
+		queue = queue[1:]
+	}
 
 	return c.JSON(http.StatusOK, u)
 }
