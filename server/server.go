@@ -76,7 +76,7 @@ func getOrders(cli *mongo.Client, ticker string, maxPrice float64, side string) 
 	// Side vars for ordering
 	priceSort := 1
 	maxQuery := "$lte"
-	if side == "SELL" {
+	if side == "BUY" {
 		priceSort = -1
 		maxQuery = "$gte"
 	}
@@ -104,26 +104,31 @@ func getOrders(cli *mongo.Client, ticker string, maxPrice float64, side string) 
 func updateOrder(cli *mongo.Client, o Order, amount int) {
 	col := cli.Database("exchange").Collection("orders")
 	filter := bson.M{"_id": o.Id}
-	open := !(o.Remaining == amount)
 	remaining := o.Remaining - amount
+	open := remaining > 0
 	update := bson.M{"$set": bson.M{
 		"open":      open,
 		"remaining": remaining,
 	}}
-	col.UpdateOne(
+	result, err := col.UpdateOne(
 		context.Background(),
 		filter,
 		update,
 	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	println("Update Result: ", result)
 }
 
-func writeOpenOrder(cli *mongo.Client, u *Order) {
+func writeOrder(cli *mongo.Client, u *Order) {
 	orderDoc := bson.M{
 		"side":      u.Side,
 		"time":      time.Now(),
 		"qty":       u.Qty,
 		"price":     u.Price,
-		"open":      true,
+		"open":      u.Remaining > 0,
 		"ticker":    u.Ticker,
 		"remaining": u.Remaining,
 	}
@@ -134,6 +139,10 @@ func writeOpenOrder(cli *mongo.Client, u *Order) {
 	} else {
 		println("Order Insert Result:", result)
 	}
+}
+
+func writeTransaction(cli *mongo.Client) {
+
 }
 
 // ----- Endpoints -----
@@ -196,10 +205,13 @@ func order(c echo.Context) (err error) {
 		}
 	}
 
-	// Write order to db if it can't be filled
+	// Write order to DB
 	if sum < u.Qty {
 		u.Remaining = (u.Qty - sum)
-		writeOpenOrder(client, u)
+	} else {
+		u.Remaining = 0
 	}
+	writeOrder(client, u)
+
 	return c.JSON(http.StatusOK, u)
 }
