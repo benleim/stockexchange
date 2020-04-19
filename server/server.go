@@ -208,16 +208,20 @@ func getPrice(c echo.Context) error {
 
 	client := getMongoClient()
 
-	// Reference "stocks" collection
-	collection := client.Database("exchange").Collection("stocks")
-	var result Stock
-	err := collection.FindOne(context.TODO(), bson.D{{"ticker", ticker}}).Decode(&result)
+	// Reference "transactions" collection
+	var result Transaction
+	collection := client.Database("exchange").Collection("transactions")
+	options := options.FindOne()
+	options.SetSort(bson.D{{"time", -1}})
+	query := bson.D{{"ticker", ticker}}
+
+	err := collection.FindOne(context.TODO(), query, options).Decode(&result)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ipo := strconv.FormatFloat(result.IPO, 'f', 2, 64)
-	return c.String(http.StatusOK, ipo)
+	price := strconv.FormatFloat(result.Price, 'f', 2, 64)
+	return c.String(http.StatusOK, price)
 }
 
 // POST - Order

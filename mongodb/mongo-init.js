@@ -13,4 +13,3 @@ db.orders.insert( { ticker: "AAPL", side: "SELL", time: ISODate("2020-04-19T01:5
 
 // Transactions (Collection)
 db.createCollection("transactions", { capped : false })
-db.transactions.insert( { to: "", from: "", ticker: "AAPL", qty: 10, price: 12.50, time: ISODate("2020-04-15T01:51:37.829Z") } )
