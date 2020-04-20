@@ -16,10 +16,10 @@ Simply changing the supply / demand by changing the proportion of BUY or SELL tr
 POST Order Body
 ```json
 {
-	"side": string,
-	"qty": int,
-	"price": float,
-	"ticker": string
+	"side": "[string]",
+	"qty": "[int]",
+	"price": "[float]",
+	"ticker": "[string]"
 }
 ```
 GET Stock Price
@@ -31,25 +31,25 @@ GET http://exchange:1323/stock/:ticker
 Order
 ```json
 {
-	"_id": DocumentID,
-	"side": bool,
-	"time": ISO Timestamp,
-	"qty": int,
-	"price": float,
-	"open": bool,
-	"ticker": string,
-	"remaining": int
+	"_id": "[DocumentID]",
+	"side": "[bool]",
+	"time": "[ISO Timestamp]",
+	"qty": "[int]",
+	"price": "[float]",
+	"open": "[bool]",
+	"ticker": "[string]",
+	"remaining": "[int]"
 }
 ```
 Transaction
 ```json
 {
-	"to": string (bid _id),
-	"from": string (ask _id),
-	"Qty": int,
-	"price": float,
-	"ticker": string,
-	"time": ISO Timestamp
+	"to": "[string] - (bid _id)",
+	"from": "[string] - (ask _id)",
+	"Qty": "[int]",
+	"price": "[float]",
+	"ticker": "[string]",
+	"time": "[ISO Timestamp]"
 }
 ```
 
