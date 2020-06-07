@@ -91,14 +91,12 @@ func getPrice(ticker string) float64 {
 	}
 	defer response.Body.Close()
 
-	// read the payload, in this case, Jhon's info
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Printf("TRADING PRICE: %f\n", p.Price)
 
-	// this is where the magic happens, I pass a pointer of type Person and Go'll do the rest
 	err = json.Unmarshal(body, &p)
 	return p.Price
 }
